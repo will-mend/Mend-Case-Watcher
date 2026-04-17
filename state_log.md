@@ -1,6 +1,6 @@
 # Mend Support Toolkit v2.0 — Project State Log
 
-_Last updated: 2026-04-17_
+_Last updated: 2026-04-17 (rev 2)_
 
 ---
 
@@ -104,6 +104,16 @@ CASES_2/
   - Added duplicate detection for summaries
   - Added `move` command for case reclassification
   - Added picklist caching to speed up TKA drafts
+- **v2.1 (2026-04-17, dev branch)** — Multi-user / cross-platform groundwork:
+  - **User-ID guard** (`case_bot.py`): bot now rejects DMs from Slack users who aren't the configured owner; replies with a pointer to the repo to set up their own instance
+  - **Cross-platform `setup.py`**: macOS support added throughout
+    - SF CLI: tries `brew install sfdxcli` → `npm install -g @salesforce/cli` fallback
+    - rclone: tries `brew install rclone` fallback
+    - Background tasks: macOS `launchd` plist generation in `~/Library/LaunchAgents/` (watcher every 5 min, bot at login with KeepAlive); Windows path unchanged
+    - Default cases directory: now `~/Documents/CASES` instead of toolkit dir
+    - Slack setup instructions updated: each user must create their own Slack app
+  - **`PLAN_option_a.md`**: deployment strategy documented (Option B dropped — requires SF admin for Connected App)
+  - **Git initialised** on `master`; all active development on `dev` branch
 
 _As of 2026-04-17, the tool is in active daily use. Recent log activity shows cases being processed across My Cases and Other Cases queues._
 
@@ -113,17 +123,17 @@ _As of 2026-04-17, the tool is in active daily use. Recent log activity shows ca
 
 These are ordered by impact. Pick up from wherever makes sense:
 
-1. **Fix `--dangerously-skip-permissions`** — enumerate the actual MCP tools needed (file read/write, SF CLI, Slack) and register them properly in `config.json` or via `setup.py`. This is a security concern and an opportunity to make Claude tool use more predictable.
+1. **Write `README.md`** — public-facing quickstart for colleagues. Should cover prerequisites, clone → `python setup.py`, Slack app creation steps (with links), and troubleshooting. See `PLAN_option_a.md` Phase 2.
 
-2. **Add SF API retry logic** — wrap `subprocess.run(["sf", ...])` calls in `utils.py` with a retry decorator (3 attempts, exponential backoff). Target: silent failures during expired SF sessions.
+2. **End-to-end test on a colleague's machine** — validate the Phase 0 guard works and that setup.py runs clean on macOS. See `PLAN_option_a.md` Phase 3 checklist.
 
-3. **Implement Jira TKA posting** — `case_bot.py` `tka` command already generates draft text. Add a `post_tka_to_jira()` function in `utils.py` using the Jira REST API (`POST /rest/api/2/issue`). The draft field mappings are already in the prompt template.
+3. **Update the GitHub repo URL** in the user-ID guard message in `case_bot.py` (currently a placeholder `https://github.com/your-org/mend-support-toolkit`).
 
-4. **File locking for `.watcher_state.json`** — use `fcntl.flock` (Linux) / `msvcrt.locking` (Windows) or a simple lock-file pattern to prevent concurrent writes from the bot and watcher.
+4. **Add SF API retry logic** — wrap `subprocess.run(["sf", ...])` calls in `utils.py` with a retry decorator (3 attempts, exponential backoff). Target: silent failures during expired SF sessions.
 
-5. **Wire up Google Drive archival** — `archive` command in `case_bot.py` is stubbed. The rclone config is already installed (handled by `setup.py`). Just needs the `rclone copy` subprocess call and a post-archive Slack confirmation.
+5. **Implement Jira TKA posting** — `tka` command already generates draft text. Add `post_tka_to_jira()` in `utils.py` using Jira REST API (`POST /rest/api/2/issue`).
 
-6. **Credential security** — move Slack/SF tokens out of `config.json` into Windows Credential Manager using the `keyring` library. `setup.py` can handle migration.
+6. **Wire up Google Drive archival** — `archive` command stub needs the `rclone copy` subprocess call and a post-archive Slack confirmation.
 
 ---
 

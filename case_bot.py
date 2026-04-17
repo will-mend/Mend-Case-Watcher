@@ -1104,7 +1104,21 @@ HELP_TEXT = """*Mend Support Toolkit — Bot Commands*
   `help`                        — show this message"""
 
 
-def dispatch(token: str, text: str, channel: str, thread_ts: str = None):
+def dispatch(token: str, text: str, channel: str, thread_ts: str = None, sender_id: str = ""):
+    # Reject anyone who isn't the configured owner of this bot instance
+    try:
+        config = load_config()
+        owner_id = config.get("slack_user_id", "")
+        if owner_id and sender_id and sender_id != owner_id:
+            reply(token, channel,
+                  "Sorry, this is a personal bot — it's already claimed by someone else.\n"
+                  "Clone the repo and run `python setup.py` to set up your own instance:\n"
+                  "https://github.com/your-org/mend-support-toolkit",
+                  thread_ts)
+            return
+    except Exception:
+        pass
+
     # Check pending confirmations first
     if handle_pending(token, text, channel, thread_ts):
         return
@@ -1226,6 +1240,7 @@ def handle_event(sm_client: SocketModeClient, req):
     text      = _strip_slack_md((event.get("text") or "").strip())
     channel   = event.get("channel", "")
     thread_ts = event.get("thread_ts") or event.get("ts")
+    sender_id = event.get("user", "")
 
     if not text or not channel:
         return
@@ -1239,7 +1254,7 @@ def handle_event(sm_client: SocketModeClient, req):
     _log(f"Command from {channel}: {text}")
 
     try:
-        dispatch(token, text, channel, thread_ts)
+        dispatch(token, text, channel, thread_ts, sender_id)
     except Exception as e:
         _log(f"Unhandled error in dispatch: {e}")
         try:

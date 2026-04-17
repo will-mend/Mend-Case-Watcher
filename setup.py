@@ -17,7 +17,7 @@ Steps:
   9. Discover SF Domain / Sub-category field names
  10. Configure Google Drive (rclone)
  11. Set up My Cases + Staging directories
- 12. Register Windows Task Scheduler jobs
+ 12. Register background tasks (Windows Task Scheduler / macOS launchd)
  13. Generate CLAUDE.md
  14. Final summary
 """
@@ -33,6 +33,9 @@ TOOLKIT_DIR   = Path(__file__).parent
 CONFIG_PATH   = TOOLKIT_DIR / "config.json"
 EXAMPLE_PATH  = TOOLKIT_DIR / "config.example.json"
 MIN_PYTHON    = (3, 9)
+
+IS_WIN = os.name == "nt"
+IS_MAC = sys.platform == "darwin"
 
 # ── Colour helpers (Windows-safe) ─────────────────────────────────────────────
 GREEN  = "\033[92m"
@@ -137,13 +140,28 @@ def check_sf():
         ok(f"sf CLI found: {result.stdout.strip()[:60]}")
         return
     warn("sf CLI not found.")
-    if ask_yn("Try to install via winget?"):
-        if winget_install("Salesforce.SFDXCLI", "sf CLI"):
-            return
-    if ask_yn("Open download page in browser?"):
-        open_url("https://developer.salesforce.com/tools/salesforcecli")
-    err("sf CLI is required. Install it and re-run setup.py.")
-    sys.exit(1)
+    installed = False
+    if IS_WIN:
+        if ask_yn("Try to install via winget?"):
+            installed = winget_install("Salesforce.SFDXCLI", "sf CLI")
+    elif IS_MAC:
+        if shutil.which("brew") and ask_yn("Try to install via Homebrew?"):
+            info("Running: brew install sfdxcli ...")
+            result = run(["brew", "install", "sfdxcli"])
+            if result.returncode == 0:
+                ok("sf CLI installed via Homebrew.")
+                installed = True
+        if not installed and shutil.which("npm") and ask_yn("Try to install via npm?"):
+            info("Running: npm install -g @salesforce/cli ...")
+            result = run(["npm", "install", "-g", "@salesforce/cli"])
+            if result.returncode == 0:
+                ok("sf CLI installed via npm.")
+                installed = True
+    if not installed:
+        if ask_yn("Open download page in browser?"):
+            open_url("https://developer.salesforce.com/tools/salesforcecli")
+        err("sf CLI is required. Install it and re-run setup.py.")
+        sys.exit(1)
 
 
 # ── Step 4: rclone ────────────────────────────────────────────────────────────
@@ -157,9 +175,16 @@ def check_rclone():
     warn("rclone not found.")
     info("rclone is needed to archive closed cases to Google Drive.")
     info("You can skip this now and configure it later with `config gdrive`.")
-    if ask_yn("Try to install via winget?"):
-        if winget_install("Rclone.Rclone", "rclone"):
-            return
+    if IS_WIN:
+        if ask_yn("Try to install via winget?"):
+            if winget_install("Rclone.Rclone", "rclone"):
+                return
+    elif IS_MAC and shutil.which("brew"):
+        if ask_yn("Try to install via Homebrew?"):
+            result = run(["brew", "install", "rclone"])
+            if result.returncode == 0:
+                ok("rclone installed via Homebrew.")
+                return
     if ask_yn("Open rclone download page?"):
         open_url("https://rclone.org/downloads/")
     if not ask_yn("Continue without rclone (you can add it later)?", default=True):
@@ -251,17 +276,21 @@ def setup_sf(config: dict) -> dict:
 def setup_slack(config: dict) -> dict:
     section("Step 8 — Slack configuration")
 
-    info("You need a Slack app with Socket Mode enabled.")
-    info("If this is already set up for the team, get the tokens from a colleague.")
+    info("Each person runs their own Slack bot — you need YOUR OWN Slack app.")
+    info("This takes about 5 minutes and doesn't require any workspace admin rights.")
     info("")
-    info("One-time Slack app setup (skip if already done):")
+    info("Create your Slack app now:")
     info("  1. https://api.slack.com/apps → Create New App → From scratch")
-    info("  2. Name: 'Mend Support Bot'  |  Choose your workspace")
-    info("  3. Socket Mode → Enable Socket Mode → Generate App-Level Token (xapp-...)")
-    info("  4. OAuth & Permissions → Bot Token Scopes:")
+    info("  2. Name: 'Mend Case Watcher - <your name>'  |  Choose your Mend workspace")
+    info("  3. Socket Mode → Enable Socket Mode → Generate App-Level Token")
+    info("       Scope: connections:write  |  Name it anything (e.g. watcher-token)")
+    info("       Copy the xapp-... token")
+    info("  4. OAuth & Permissions → Bot Token Scopes → Add:")
     info("       chat:write  im:write  users:read  users:read.email")
     info("  5. Install to Workspace → copy the Bot User OAuth Token (xoxb-...)")
-    info("  6. Event Subscriptions → Subscribe to Bot Events → message.im")
+    info("  6. Event Subscriptions → Enable Events → Subscribe to Bot Events:")
+    info("       message.im")
+    info("  7. App Home → check 'Allow users to send Slash commands and messages'")
     print()
 
     if ask_yn("Open Slack API setup page?", default=False):
@@ -450,7 +479,7 @@ def setup_directories(config: dict) -> dict:
     elif config.get("my_cases_dir"):
         existing_parent = str(Path(config["my_cases_dir"]).parent)
 
-    default_parent = existing_parent or str(TOOLKIT_DIR)
+    default_parent = existing_parent or str(Path.home() / "Documents" / "CASES")
     parent = ask("Parent directory for all case folders", default=default_parent)
     parent_path = Path(parent)
 
@@ -470,22 +499,13 @@ def setup_directories(config: dict) -> dict:
     return config
 
 
-# ── Step 12: Task Scheduler ───────────────────────────────────────────────────
+# ── Step 12: Background tasks (cross-platform) ───────────────────────────────
 
-def setup_task_scheduler():
-    section("Step 12 — Windows Task Scheduler")
+def _setup_windows_tasks():
+    python_exe = sys.executable
+    watcher_py = str(TOOLKIT_DIR / "case_watcher.py")
+    bot_py     = str(TOOLKIT_DIR / "case_bot.py")
 
-    if os.name != "nt":
-        info("Non-Windows system — skipping Task Scheduler.")
-        info("To run the watcher, add a cron job: */5 * * * * python case_watcher.py")
-        info("To run the bot: python case_bot.py (start at login via your system's autostart)")
-        return
-
-    python_exe  = sys.executable
-    watcher_py  = str(TOOLKIT_DIR / "case_watcher.py")
-    bot_py      = str(TOOLKIT_DIR / "case_bot.py")
-
-    # Watcher — every 5 minutes
     watcher_ps = f"""
 $action   = New-ScheduledTaskAction -Execute '{python_exe}' -Argument '{watcher_py}'
 $trigger  = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 5) -Once -At (Get-Date)
@@ -505,7 +525,6 @@ Write-Output 'OK'
         warn(f"Watcher task registration failed: {result.stderr.strip()[:200]}")
         info("Run setup.py as Administrator, or register the task manually.")
 
-    # Bot — at login, restart on crash
     bot_ps = f"""
 $action   = New-ScheduledTaskAction -Execute '{python_exe}' -Argument '{bot_py}'
 $trigger  = New-ScheduledTaskTrigger -AtLogOn
@@ -524,6 +543,75 @@ Write-Output 'OK'
     else:
         warn(f"Bot task registration failed: {result.stderr.strip()[:200]}")
         info("Run setup.py as Administrator to register the bot task.")
+
+
+def _setup_macos_launchd():
+    python_exe  = sys.executable
+    watcher_py  = str(TOOLKIT_DIR / "case_watcher.py")
+    bot_py      = str(TOOLKIT_DIR / "case_bot.py")
+    log_path    = str(TOOLKIT_DIR / "toolkit.log")
+    agents_dir  = Path.home() / "Library" / "LaunchAgents"
+    agents_dir.mkdir(parents=True, exist_ok=True)
+
+    watcher_plist = agents_dir / "io.mend.casewatcher.plist"
+    watcher_plist.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>io.mend.casewatcher</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{python_exe}</string>
+        <string>{watcher_py}</string>
+    </array>
+    <key>StartInterval</key><integer>300</integer>
+    <key>RunAtLoad</key><true/>
+    <key>StandardOutPath</key><string>{log_path}</string>
+    <key>StandardErrorPath</key><string>{log_path}</string>
+</dict>
+</plist>
+""", encoding="utf-8")
+
+    bot_plist = agents_dir / "io.mend.casebot.plist"
+    bot_plist.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>io.mend.casebot</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{python_exe}</string>
+        <string>{bot_py}</string>
+    </array>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><true/>
+    <key>StandardOutPath</key><string>{log_path}</string>
+    <key>StandardErrorPath</key><string>{log_path}</string>
+</dict>
+</plist>
+""", encoding="utf-8")
+
+    for label, plist in [("MendCaseWatcher", watcher_plist), ("MendCaseBot", bot_plist)]:
+        subprocess.run(["launchctl", "unload", str(plist)],
+                       capture_output=True)  # ignore errors if not loaded yet
+        result = subprocess.run(["launchctl", "load", str(plist)],
+                                capture_output=True, text=True)
+        if result.returncode == 0:
+            ok(f"launchd: {label} registered ({plist.name})")
+        else:
+            warn(f"launchctl load failed for {label}: {result.stderr.strip()[:200]}")
+
+
+def setup_background_tasks():
+    section("Step 12 — Background tasks")
+    if IS_WIN:
+        _setup_windows_tasks()
+    elif IS_MAC:
+        _setup_macos_launchd()
+    else:
+        info("Linux detected — register tasks manually:")
+        info("  Watcher (cron): */5 * * * * " + sys.executable + " " + str(TOOLKIT_DIR / "case_watcher.py"))
+        info("  Bot (startup):  add `python case_bot.py &` to ~/.bashrc or a systemd user service")
 
 
 # ── Step 13: CLAUDE.md ────────────────────────────────────────────────────────
@@ -602,7 +690,7 @@ def main():
         json.dump(config, f, indent=2)
     ok("config.json saved.")
 
-    setup_task_scheduler()
+    setup_background_tasks()
     setup_claude_md()
     final_summary(config)
 
