@@ -130,23 +130,24 @@ Your app is created. You should now be on the app's settings page.
 
 #### 8b. Generate your App-Level Token (`xapp-...`)
 
-1. In the left sidebar, click **"Socket Mode"**
-2. Toggle **"Enable Socket Mode"** on (it may already be on from the manifest)
-3. A dialog appears asking you to generate an app-level token
+1. In the left sidebar, click **"Basic Information"**
+2. Scroll down to the **"App-Level Tokens"** section
+3. Click **"Generate Token and Scopes"**
 4. Give it any name (e.g. `watcher-token`)
 5. Click **"Add Scope"** → select `connections:write`
 6. Click **"Generate"**
 7. **Copy the token** — it starts with `xapp-`. You'll need it in a moment.
 
-#### 8c. Install the app and get your Bot Token (`xoxb-...`)
+#### 8c. Request permission and install the app (`xoxb-...`)
 
-1. In the left sidebar, click **"OAuth & Permissions"**
-2. Click **"Install to Workspace"** at the top
-3. A permission screen appears — click **"Allow"**
+1. In the left sidebar, click **"Install App"**
+2. You'll see one of two things:
+   - **"Install to Workspace"** — click it, allow the permissions, and you're done
+   - **"Request to Install"** — this means your Slack workspace requires admin approval first
 
-> **If you see a message saying the installation needs admin approval:** this depends on your workspace's app policy. Contact IT or ask a workspace admin to approve. Once approved, come back and click Install.
+> **If you see "Request to Install":** Click it to send an approval request to a Mend workspace admin. You'll get a Slack notification once it's approved — this is usually fast. Once approved, come back to https://api.slack.com/apps → your app → **Install App** → **Install to Workspace** → Allow.
 
-4. After installing, you'll see your **Bot User OAuth Token** — it starts with `xoxb-`. **Copy it.**
+3. After installing, you'll be shown your **Bot User OAuth Token** on the same page — it starts with `xoxb-`. **Copy it.**
 
 #### 8d. Find your Slack Member ID
 

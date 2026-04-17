@@ -286,9 +286,10 @@ def setup_slack(config: dict) -> dict:
     info("  3. On the review screen, RENAME the app from 'Mend Case Watcher - YOUR NAME HERE'")
     info("     to something like 'Mend Case Watcher - William'")
     info("  4. Create — all scopes and settings are pre-filled")
-    info("  5. Socket Mode → Generate App-Level Token")
+    info("  5. Basic Information → App-Level Tokens → Generate Token and Scopes")
     info("       Scope: connections:write  |  Copy the xapp-... token")
-    info("  5. Install to Workspace → copy the Bot User OAuth Token (xoxb-...)")
+    info("  6. Install App → 'Request to Install' (needs admin approval, usually fast)")
+    info("     OR 'Install to Workspace' if approval not required → copy the xoxb-... token")
     print()
 
     if ask_yn("Open Slack API page now?", default=False):
