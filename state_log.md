@@ -1,6 +1,6 @@
 # Mend Support Toolkit v2.0 — Project State Log
 
-_Last updated: 2026-04-17 (rev 3)_
+_Last updated: 2026-04-17 (rev 4)_
 
 ---
 
@@ -80,10 +80,12 @@ CASES_2/
 |----------|-------|-------|
 | High | `--dangerously-skip-permissions` used on Claude CLI calls | Should register specific MCP tools instead of bypassing all guards |
 | High | Plaintext tokens in `config.json` | Slack bot token, SF session tokens stored unencrypted |
+| High | Windows Task Scheduler registration broken | `setup.py` Step 12 runs without error but tasks are not created; bot and watcher must be started manually for now (`python case_bot.py`, `python case_watcher.py`) |
 | Medium | No retry/backoff on SF API calls | Expired session silently kills watcher; needs exponential backoff |
 | Medium | Race condition on `.watcher_state.json` | No file locking; concurrent watcher + bot writes could corrupt state |
 | Medium | Jira TKA creation not implemented | `tka` command drafts ticket text but doesn't POST to Jira API |
 | Medium | Google Drive archival not implemented | `archive` command stub exists; rclone integration not wired |
+| Low | SF staging report ID in config.example.json | Currently set to William's report; confirm it's the shared team report or update per-user |
 | Low | `requirements.txt` incomplete | Only lists `slack_sdk`; other dependencies rely on stdlib or aren't pinned |
 | Low | Token estimation is crude | `len(text) / 4` — could use `tiktoken` or Claude's tokenizer for accuracy |
 | Low | SF API version hardcoded | `v62.0` in REST calls; should be config-driven |
@@ -125,7 +127,9 @@ _As of 2026-04-17, the tool is in active daily use. Recent log activity shows ca
 
 These are ordered by impact. Pick up from wherever makes sense:
 
-1. **Write `README.md`** — public-facing quickstart for colleagues. Should cover prerequisites, clone → `python setup.py`, Slack app creation (point to `slack_app_manifest.yaml`), and troubleshooting. See `PLAN_option_a.md` Phase 2.
+1. **Fix Windows Task Scheduler registration** — `setup.py` Step 12 runs without error but tasks are not created. Root cause unknown; needs debugging. Until fixed, users must start bot/watcher manually.
+
+2. **Write `README.md`** — short public-facing intro for the repo (setup_guide.md is the detailed walkthrough; README should be the one-page entry point).
 
 2. **End-to-end test on a colleague's machine** — validate the Phase 0 guard works and that setup.py runs clean on macOS. See `PLAN_option_a.md` Phase 3 checklist.
 
