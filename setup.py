@@ -9,17 +9,15 @@ Steps:
   1. Check Python version
   2. Install pip dependencies
   3. Check / install sf CLI (Salesforce)
-  4. Check / install rclone
-  5. Check Claude CLI
-  6. Create config.json from example
-  7. Set up Salesforce authentication
-  8. Configure Slack tokens
-  9. Discover SF Domain / Sub-category field names
- 10. Configure Google Drive (rclone)
- 11. Set up My Cases + Staging directories
- 12. Register background tasks (Windows Task Scheduler / macOS launchd)
- 13. Generate CLAUDE.md
- 14. Final summary
+  4. Check Claude CLI
+  5. Create config.json from example
+  6. Set up Salesforce authentication
+  7. Configure Slack tokens
+  8. Discover SF Domain / Sub-category field names
+  9. Set up My Cases + Staging directories
+ 10. Register background tasks (Windows Task Scheduler / macOS launchd)
+ 11. Generate CLAUDE.md
+ 12. Final summary
 """
 
 import json
@@ -164,37 +162,10 @@ def check_sf():
         sys.exit(1)
 
 
-# ── Step 4: rclone ────────────────────────────────────────────────────────────
-
-def check_rclone():
-    section("Step 4 — rclone (Google Drive)")
-    if shutil.which("rclone"):
-        result = run(["rclone", "version"])
-        ok(f"rclone found: {result.stdout.splitlines()[0][:60]}")
-        return
-    warn("rclone not found.")
-    info("rclone is needed to archive closed cases to Google Drive.")
-    info("You can skip this now and configure it later with `config gdrive`.")
-    if IS_WIN:
-        if ask_yn("Try to install via winget?"):
-            if winget_install("Rclone.Rclone", "rclone"):
-                return
-    elif IS_MAC and shutil.which("brew"):
-        if ask_yn("Try to install via Homebrew?"):
-            result = run(["brew", "install", "rclone"])
-            if result.returncode == 0:
-                ok("rclone installed via Homebrew.")
-                return
-    if ask_yn("Open rclone download page?"):
-        open_url("https://rclone.org/downloads/")
-    if not ask_yn("Continue without rclone (you can add it later)?", default=True):
-        sys.exit(0)
-
-
-# ── Step 5: Claude CLI ────────────────────────────────────────────────────────
+# ── Step 4: Claude CLI ────────────────────────────────────────────────────────
 
 def check_claude():
-    section("Step 5 — Claude CLI")
+    section("Step 4 — Claude CLI")
     if shutil.which("claude"):
         ok("Claude CLI found.")
         return
@@ -207,10 +178,10 @@ def check_claude():
         sys.exit(0)
 
 
-# ── Step 6: config.json ───────────────────────────────────────────────────────
+# ── Step 5: config.json ───────────────────────────────────────────────────────
 
 def setup_config() -> dict:
-    section("Step 6 — config.json")
+    section("Step 5 — config.json")
 
     if not EXAMPLE_PATH.exists():
         err("config.example.json not found. Make sure it is in the same folder.")
@@ -234,10 +205,10 @@ def setup_config() -> dict:
     return config
 
 
-# ── Step 7: Salesforce auth ───────────────────────────────────────────────────
+# ── Step 6: Salesforce auth ───────────────────────────────────────────────────
 
 def setup_sf(config: dict) -> dict:
-    section("Step 7 — Salesforce authentication")
+    section("Step 6 — Salesforce authentication")
 
     sf_user = config.get("sf_user", "")
     if not sf_user:
@@ -271,10 +242,10 @@ def setup_sf(config: dict) -> dict:
     return config
 
 
-# ── Step 8: Slack tokens ──────────────────────────────────────────────────────
+# ── Step 7: Slack tokens ──────────────────────────────────────────────────────
 
 def setup_slack(config: dict) -> dict:
-    section("Step 8 — Slack configuration")
+    section("Step 7 — Slack configuration")
 
     info("Each person runs their own Slack bot — you need YOUR OWN Slack app.")
     info("The repo includes a manifest that pre-configures everything in one paste.")
@@ -323,7 +294,7 @@ def setup_slack(config: dict) -> dict:
     return config
 
 
-# ── Step 9: SF field discovery ────────────────────────────────────────────────
+# ── Step 8: SF field discovery ────────────────────────────────────────────────
 
 _DEFAULT_DOMAIN_FIELD  = "Domain_Category__c"
 _DEFAULT_SUBCAT_FIELD  = "Domain_Sub_Category__c"
@@ -356,7 +327,7 @@ def _get_sf_describe(config: dict):
 
 
 def setup_sf_fields(config: dict) -> dict:
-    section("Step 9 — SF Domain / Sub-category fields")
+    section("Step 8 — SF Domain / Sub-category fields")
 
     info("The 'claim' command updates Domain and Sub-category on the SF case.")
     info(f"Default field names: {_DEFAULT_DOMAIN_FIELD}  /  {_DEFAULT_SUBCAT_FIELD}")
@@ -410,44 +381,10 @@ def setup_sf_fields(config: dict) -> dict:
     return config
 
 
-# ── Step 10: Google Drive / rclone ────────────────────────────────────────────
-
-def setup_gdrive(config: dict) -> dict:
-    section("Step 10 — Google Drive (rclone)")
-
-    if not shutil.which("rclone"):
-        info("rclone not installed — skipping Google Drive setup.")
-        info("Install rclone later and run `config gdrive <remote> <folder-id>`.")
-        return config
-
-    info("rclone needs a one-time Google Drive authentication.")
-    info("This opens a browser window — you only do this once.")
-    print()
-
-    existing_remote = config.get("gdrive_remote", "")
-    if existing_remote:
-        ok(f"rclone remote already configured: {existing_remote}")
-        if not ask_yn("Re-configure?", default=False):
-            return config
-
-    if ask_yn("Run `rclone config` now to set up Google Drive?"):
-        subprocess.run(["rclone", "config"], shell=(os.name == "nt"))
-        print()
-        remote_name = ask("Name of the rclone remote you just created (e.g. gdrive)")
-        folder_id   = ask("Google Drive folder ID for archives (from the folder URL)", default="")
-        config["gdrive_remote"]    = remote_name
-        config["gdrive_folder_id"] = folder_id
-        ok(f"Google Drive configured: {remote_name}:{folder_id}")
-    else:
-        info("Skipped. Configure later with `config gdrive <remote> <folder-id>`.")
-
-    return config
-
-
-# ── Step 11: Directories ──────────────────────────────────────────────────────
+# ── Step 9: Directories ──────────────────────────────────────────────────────
 
 def setup_directories(config: dict) -> dict:
-    section("Step 11 — Case directories")
+    section("Step 9 — Case directories")
 
     info("All case folders live under a single parent directory.")
     info("Three sub-folders will be created automatically:")
@@ -484,7 +421,7 @@ def setup_directories(config: dict) -> dict:
     return config
 
 
-# ── Step 12: Background tasks (cross-platform) ───────────────────────────────
+# ── Step 10: Background tasks (cross-platform) ───────────────────────────────
 
 def _setup_windows_tasks():
     python_exe = sys.executable
@@ -588,7 +525,7 @@ def _setup_macos_launchd():
 
 
 def setup_background_tasks():
-    section("Step 12 — Background tasks")
+    section("Step 10 — Background tasks")
     if IS_WIN:
         _setup_windows_tasks()
     elif IS_MAC:
@@ -599,10 +536,10 @@ def setup_background_tasks():
         info("  Bot (startup):  add `python case_bot.py &` to ~/.bashrc or a systemd user service")
 
 
-# ── Step 13: CLAUDE.md ────────────────────────────────────────────────────────
+# ── Step 11: CLAUDE.md ────────────────────────────────────────────────────────
 
 def setup_claude_md():
-    section("Step 13 — CLAUDE.md (AI system prompt)")
+    section("Step 11 — CLAUDE.md (AI system prompt)")
 
     sys.path.insert(0, str(TOOLKIT_DIR))
     try:
@@ -615,7 +552,7 @@ def setup_claude_md():
         warn(f"Could not generate CLAUDE.md: {e}")
 
 
-# ── Step 14: Final summary ────────────────────────────────────────────────────
+# ── Step 12: Final summary ────────────────────────────────────────────────────
 
 def final_summary(config: dict):
     section("Setup complete!")
@@ -660,14 +597,12 @@ def main():
     check_python()
     install_deps()
     check_sf()
-    check_rclone()
     check_claude()
 
     config = setup_config()
     config = setup_sf(config)
     config = setup_slack(config)
     config = setup_sf_fields(config)
-    config = setup_gdrive(config)
     config = setup_directories(config)
 
     # Save config before registering tasks (tasks need the saved config)

@@ -29,9 +29,6 @@
     "Low":      72
   },
 
-  "gdrive_remote":    "",
-  "gdrive_folder_id": "",
-
   "jira_account_id":  "",
 
   "system_prompt": "I am a Mend Technical Support Engineer. You are my technical assistant. Use Mend internal documentation, knowledge base articles and public docs to enhance your understanding of Mend products including SCA, SAST, Renovate/Remediate, and Container scanning."

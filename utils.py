@@ -715,39 +715,3 @@ def regenerate_claude_md():
 
     (TOOLKIT_DIR / "CLAUDE.md").write_text(content, encoding="utf-8")
     log("CLAUDE.md regenerated")
-
-
-# ── Google Drive (rclone) ─────────────────────────────────────────────────────
-
-def archive_to_gdrive(local_path: Path, case_number: str) -> bool:
-    """Upload a case folder to Google Drive via rclone. Returns True on success."""
-    try:
-        config    = load_config()
-        remote    = config.get("gdrive_remote", "")
-        folder_id = config.get("gdrive_folder_id", "")
-    except Exception:
-        return False
-
-    if not remote:
-        log("gdrive_remote not configured — skipping archive")
-        return False
-
-    # Build rclone destination: remote:path or remote:{folder_id}
-    dest = f"{remote}:{folder_id}/{case_number}" if folder_id else f"{remote}:{case_number}"
-
-    try:
-        result = subprocess.run(
-            ["rclone", "copy", str(local_path), dest, "--progress"],
-            capture_output=True, text=True,
-            shell=(os.name == "nt"),
-            timeout=300,
-        )
-        if result.returncode == 0:
-            log(f"Archived {case_number} to Google Drive ({dest})")
-            return True
-        else:
-            log(f"rclone failed for {case_number}: {result.stderr.strip()}")
-            return False
-    except Exception as e:
-        log(f"rclone error for {case_number}: {e}")
-        return False

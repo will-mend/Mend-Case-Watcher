@@ -169,9 +169,8 @@ The wizard is waiting. Paste in:
 
 ### Steps 9–11 — Automatic
 
-- **Step 9** validates your SF field names (Domain / Sub-category) — fully automatic.
-- **Step 10** is Google Drive / rclone setup — you can skip this for now.
-- **Step 11** creates your case folders. The default is `~/Documents/CASES/` — press Enter to accept, or type a different path.
+- **Step 8** validates your SF field names (Domain / Sub-category) — fully automatic.
+- **Step 9** creates your case folders. The default is `~/Documents/CASES/` — press Enter to accept, or type a different path.
 
 ---
 
@@ -251,7 +250,6 @@ The bot will fetch the case from Salesforce, download any attachments, create a 
 | `digest` | Show all your open cases with SLA status |
 | `watch` | List cases currently being watched |
 | `unwatch 00XXXXXX` | Stop watching a case |
-| `archive 00XXXXXX` | Upload case folder to Google Drive (requires rclone) |
 | `reauth` | Re-authenticate with Salesforce |
 | `config show` | Show your current config |
 | `config <key> <value>` | Update a config value |

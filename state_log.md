@@ -1,6 +1,6 @@
 # Mend Support Toolkit v2.0 — Project State Log
 
-_Last updated: 2026-04-17 (rev 4)_
+_Last updated: 2026-04-17 (rev 5)_
 
 ---
 
@@ -52,7 +52,6 @@ CASES_2/
 - `tka` command: drafts a Jira TKA ticket using Claude; **does not yet POST to Jira** (draft only, printed to Slack)
 - `summarize` command: regenerates `summary.md` for an existing local case
 - `digest` command: generates a daily digest of open cases with SLA status
-- `archive` command: stub present; **Google Drive archival via rclone not yet wired up**
 - `move` command: moves a case between My Cases / Staging / Other Cases folders
 
 ### `utils.py` — FUNCTIONAL
@@ -84,7 +83,6 @@ CASES_2/
 | Medium | No retry/backoff on SF API calls | Expired session silently kills watcher; needs exponential backoff |
 | Medium | Race condition on `.watcher_state.json` | No file locking; concurrent watcher + bot writes could corrupt state |
 | Medium | Jira TKA creation not implemented | `tka` command drafts ticket text but doesn't POST to Jira API |
-| Medium | Google Drive archival not implemented | `archive` command stub exists; rclone integration not wired |
 | Low | SF staging report ID in config.example.json | Currently set to William's report; confirm it's the shared team report or update per-user |
 | Low | `requirements.txt` incomplete | Only lists `slack_sdk`; other dependencies rely on stdlib or aren't pinned |
 | Low | Token estimation is crude | `len(text) / 4` — could use `tiktoken` or Claude's tokenizer for accuracy |

@@ -13,7 +13,6 @@ Commands:
   logs <NUMBER>              — show RESOURCES/ files with token counts
   move <NUMBER> <filename>   — move a file to large_files/
   move <NUMBER> all          — move all large files to large_files/
-  archive <NUMBER>           — upload case folder to Google Drive
   digest                     — on-demand daily digest
   watch                      — list cases being watched
   unwatch <NUMBER>           — stop watching a case
@@ -47,7 +46,6 @@ from utils import (
     TOOLKIT_DIR,
     _slack_post,
     _slack_update,
-    archive_to_gdrive,
     build_digest_message,
     estimate_tokens,
     fetch_and_write_summary,
@@ -792,24 +790,6 @@ def cmd_move(token: str, case_number: str, target: str, channel: str, thread_ts:
     reply(token, channel, msg, thread_ts)
 
 
-# ── Command: archive <NUMBER> ─────────────────────────────────────────────────
-
-def cmd_archive(token: str, case_number: str, channel: str, thread_ts: str = None):
-    folder, _ = _find_case_folder(case_number)
-    if not folder.exists():
-        reply(token, channel, f":x: No local folder found for case {case_number}.", thread_ts)
-        return
-    ts, _ = thinking(token, channel, thread_ts)
-    success = archive_to_gdrive(folder, case_number)
-    if success:
-        _slack_update(token, channel, ts, f":white_check_mark: Case {case_number} archived to Google Drive.")
-    else:
-        _slack_update(token, channel, ts,
-            f":x: Archive failed for case {case_number}. Check that `gdrive_remote` is configured "
-            f"(`config show`) and rclone is authenticated."
-        )
-
-
 # ── Command: digest ───────────────────────────────────────────────────────────
 
 def cmd_digest(token: str, channel: str, thread_ts: str = None):
@@ -922,12 +902,6 @@ def cmd_config(token: str, args: list, channel: str, thread_ts: str = None):
             reply(token, channel, ":x: Usage: `config sla <Priority> <hours>`", thread_ts)
         return
 
-    if key == "gdrive" and len(args) >= 3:
-        config["gdrive_remote"]    = args[1]
-        config["gdrive_folder_id"] = args[2]
-        save_config(config)
-        reply(token, channel, f":white_check_mark: Google Drive set to `{args[1]}:{args[2]}`.", thread_ts)
-        return
 
     # Generic key=value
     if not val:
@@ -956,7 +930,6 @@ def cmd_setup(token: str, channel: str, thread_ts: str = None):
 
     checks = [
         ("sf CLI",      _shutil.which("sf")),
-        ("rclone",      _shutil.which("rclone")),
         ("claude CLI",  _shutil.which("claude")),
         ("python",      _shutil.which("python") or _shutil.which("python3")),
     ]
@@ -1084,7 +1057,6 @@ HELP_TEXT = """*Mend Support Toolkit — Bot Commands*
   `download <NUMBER>`           — download attachments for a case (on demand)
   `logs <NUMBER>`               — show RESOURCES/ files with token counts
   `move <NUMBER> <file|all>`    — move large file(s) to large_files/
-  `archive <NUMBER>`            — upload case folder to Google Drive
 
 *Watching*
   `watch`                       — list all watched cases
@@ -1095,7 +1067,6 @@ HELP_TEXT = """*Mend Support Toolkit — Bot Commands*
   `config <key> <value>`        — update a setting
   `config system-prompt <text>` — update AI system prompt + regenerate CLAUDE.md
   `config sla <Priority> <hrs>` — set SLA threshold (e.g. `config sla Critical 4`)
-  `config gdrive <remote> <id>` — set Google Drive rclone remote + folder ID
 
 *Other*
   `digest`                      — on-demand daily digest
@@ -1178,11 +1149,6 @@ def dispatch(token: str, text: str, channel: str, thread_ts: str = None, sender_
         cmd_move(token, m.group(1).zfill(8), m.group(2).strip(), channel, thread_ts)
         return
 
-    # archive <NUMBER>
-    m = re.match(r"^archive\s+(\d+)$", lower)
-    if m:
-        cmd_archive(token, m.group(1).zfill(8), channel, thread_ts)
-        return
 
     # digest
     if lower == "digest":
