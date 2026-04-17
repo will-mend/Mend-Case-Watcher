@@ -1,6 +1,11 @@
 # Sensitive config (contains live tokens)
 config.json
 
+# Local-only development and AI context files
+state_log.md
+PLAN_option_a.md
+PLAN_option_b.md
+
 # Runtime state
 .watcher_state.json
 toolkit.log
