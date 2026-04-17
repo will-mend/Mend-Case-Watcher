@@ -2,7 +2,7 @@
 """
 case_watcher.py — Mend Support Toolkit background poller.
 
-Runs every 5 minutes via Windows Task Scheduler.
+Designed to be triggered on a schedule (Task Scheduler / launchd / cron).
 Internally rate-limits My Cases vs Staging polls using timestamps in state.
 
 What it does each run:
@@ -13,7 +13,7 @@ What it does each run:
   - Detects status changes and new comments; sends Slack DM
   - Sends SLA nudges for overdue cases
   - Sends daily digest at configured digest_time
-  - Archives closed cases to Google Drive (if configured)
+  - Removes local folders for closed cases
 """
 
 import os
@@ -39,7 +39,6 @@ from utils import (
     save_state,
     send_slack_dm,
     sync_case_attachments,
-    archive_to_gdrive,
     estimate_tokens,
 )
 
@@ -204,10 +203,9 @@ def check_for_updates(cases: list, state: dict, staging: bool = False):
 # ── Closed case cleanup ───────────────────────────────────────────────────────
 
 def cleanup_closed_cases(open_case_numbers: set, state: dict):
-    """Archive case folders that are no longer in the open SF list."""
-    config      = load_config()
-    my_cases    = Path(config.get("my_cases_dir", TOOLKIT_DIR / "My Cases"))
-    do_archive  = config.get("archive_closed_cases", True)
+    """Remove local folders for cases no longer in the open SF list."""
+    config   = load_config()
+    my_cases = Path(config.get("my_cases_dir", TOOLKIT_DIR / "My Cases"))
 
     if not my_cases.is_dir():
         return
@@ -217,27 +215,15 @@ def cleanup_closed_cases(open_case_numbers: set, state: dict):
         if not entry.is_dir() or entry.name in open_case_numbers:
             continue
 
-        _log(f"Case {entry.name} no longer in open SF list — archiving")
-
-        if do_archive:
-            success = archive_to_gdrive(entry, entry.name)
-            if success:
-                shutil.rmtree(entry, ignore_errors=True)
-                state.pop(entry.name, None)
-                closed.append(entry.name)
-                _log(f"Archived and removed local folder: {entry.name}")
-            else:
-                _log(f"Archive failed for {entry.name} — local folder kept")
-        else:
-            shutil.rmtree(entry, ignore_errors=True)
-            state.pop(entry.name, None)
-            closed.append(entry.name)
+        _log(f"Case {entry.name} no longer in open SF list — removing local folder")
+        shutil.rmtree(entry, ignore_errors=True)
+        state.pop(entry.name, None)
+        closed.append(entry.name)
 
     if closed:
         items = "\n".join(f"  • {n}" for n in closed)
-        action = "archived to Google Drive and removed" if do_archive else "removed"
         send_slack_dm(
-            f":file_folder: *{len(closed)} closed case folder(s) {action}:*\n{items}"
+            f":file_folder: *{len(closed)} closed case folder(s) removed locally:*\n{items}"
         )
 
 

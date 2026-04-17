@@ -9,6 +9,12 @@ PLAN_option_b.md
 # Runtime state
 .watcher_state.json
 toolkit.log
+logs/
+
+# Generated launch scripts (created by setup.py, contain local paths)
+start_bot.bat
+start_bot.vbs
+start_watcher.bat
 
 # Case data (local filesystem, not source code)
 My Cases/

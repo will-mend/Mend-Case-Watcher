@@ -174,46 +174,72 @@ The wizard is waiting. Paste in:
 
 ---
 
-### Step 12 — Background Tasks
+### Step 10 — Background Tasks
 
-The wizard attempts to register the watcher and bot as background tasks so they start automatically.
+The wizard sets up automatic startup for the bot and watcher.
 
-> **⚠️ Known issue (Windows):** The Task Scheduler registration currently does not work reliably. Until this is fixed, you'll need to start the bot and watcher manually — see Part 4 below.
->
-> **macOS:** launchd registration should work. The bot and watcher will start immediately and restart automatically at login.
+**Windows:**
+- Creates `start_bot.vbs` — runs the bot silently (no console window) at login via the Windows Startup folder
+- Creates `start_watcher.bat` — registered in Task Scheduler to run every 5 minutes
+- All output is logged to the `logs/` folder inside the toolkit directory:
+  - `logs/startup.log` — startup events and exit codes
+  - `logs/bot_stdout.log` — bot stdout/stderr
+  - `logs/watcher_stdout.log` — watcher stdout/stderr
+
+**macOS:**
+- Registers `io.mend.casebot` launchd agent — starts at login, restarts automatically if it crashes
+- Registers `io.mend.casewatcher` launchd agent — runs every 5 minutes
+- Logs to `logs/bot_stdout.log` and `logs/watcher_stdout.log`
+
+> If the startup shortcut or Task Scheduler registration fails, see Part 4 for manual start instructions.
 
 ---
 
 ## Part 4 — Starting the Bot
 
 ### macOS
-If Step 12 succeeded, everything is already running. Skip to Part 5.
+If Step 10 succeeded, everything is already running. Skip to Part 5.
 
-To check: `launchctl list | grep mend`
+**Check status:**
+```
+launchctl list | grep mend
+```
 
-To start manually if needed:
+**Check logs:**
+```
+tail -f logs/bot_stdout.log
+tail -f logs/watcher_stdout.log
+```
+
+**Start manually if needed:**
 ```
 python case_bot.py &
 python case_watcher.py &
 ```
 
-### Windows (manual start required for now)
+### Windows
 
-Open **two separate terminal windows** in the repo folder:
+If Step 10 succeeded, the bot starts automatically at your next login. The watcher runs every 5 minutes via Task Scheduler.
 
-**Terminal 1 — the bot (keep this open):**
+**Check logs** in the `logs/` folder inside the toolkit directory:
+- `startup.log` — records each startup attempt with timestamp and exit code
+- `bot_stdout.log` — everything the bot prints
+- `watcher_stdout.log` — everything the watcher prints
+
+**Start manually if needed:**
+
+Open a terminal in the toolkit folder:
 ```
-python case_bot.py
+pythonw case_bot.py
 ```
-You should see: `Case Bot connected — listening for commands`
+(use `pythonw` to run without a visible console window, or `python` if you want to see output)
 
-**Terminal 2 — run the watcher once manually:**
 ```
 python case_watcher.py
 ```
-The watcher exits after one poll cycle. Run it whenever you want to sync, or set up a Task Scheduler entry manually (Task Scheduler → Create Basic Task → Daily, repeat every 5 minutes).
+The watcher exits after one poll cycle. Re-run whenever you want to sync.
 
-> **Tip for Windows:** To keep the bot running after you close the terminal, you can use `pythonw case_bot.py` which runs it without a visible window, or set it up via Task Scheduler manually.
+**Check Task Scheduler:** Open Task Scheduler → Task Scheduler Library → look for `MendCaseWatcher`. If it's there, right-click → Run to test it manually.
 
 ---
 
@@ -297,3 +323,9 @@ The bot will fetch the case from Salesforce, download any attachments, create a 
 | `~/Documents/CASES/Other Cases/` | Cases you looked up that belong to someone else |
 | `toolkit.log` | Audit log of all bot and watcher activity |
 | `.watcher_state.json` | Watcher state (last poll time, downloaded files) |
+| `logs/startup.log` | Startup events with timestamps and exit codes |
+| `logs/bot_stdout.log` | Bot process stdout/stderr |
+| `logs/watcher_stdout.log` | Watcher process stdout/stderr |
+| `start_bot.vbs` | Silent bot launcher (Windows, created by setup.py) |
+| `start_bot.bat` | Bot startup script with logging (Windows, created by setup.py) |
+| `start_watcher.bat` | Watcher script for Task Scheduler (Windows, created by setup.py) |

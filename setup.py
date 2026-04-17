@@ -423,55 +423,117 @@ def setup_directories(config: dict) -> dict:
 
 # ── Step 10: Background tasks (cross-platform) ───────────────────────────────
 
-def _setup_windows_tasks():
-    python_exe = sys.executable
-    watcher_py = str(TOOLKIT_DIR / "case_watcher.py")
-    bot_py     = str(TOOLKIT_DIR / "case_bot.py")
+def _ensure_logs_dir() -> Path:
+    """Create and return the logs/ directory inside the toolkit folder."""
+    logs_dir = TOOLKIT_DIR / "logs"
+    logs_dir.mkdir(exist_ok=True)
+    return logs_dir
 
-    watcher_ps = f"""
-$action   = New-ScheduledTaskAction -Execute '{python_exe}' -Argument '{watcher_py}'
-$trigger  = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 5) -Once -At (Get-Date)
-$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 4) `
-              -StartWhenAvailable -MultipleInstances IgnoreNew -Hidden $true
-Register-ScheduledTask -TaskName 'MendCaseWatcher' `
-  -Action $action -Trigger $trigger -Settings $settings -RunLevel Highest -Force | Out-Null
-Write-Output 'OK'
-"""
+
+def _setup_windows_tasks():
+    python_exe  = sys.executable
+    pythonw_exe = str(Path(python_exe).parent / "pythonw.exe")
+    watcher_py  = str(TOOLKIT_DIR / "case_watcher.py")
+    logs_dir    = _ensure_logs_dir()
+    startup_dir = Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+
+    # ── Bot: Windows Startup folder via VBS launcher ──────────────────────────
+    # Uses pythonw.exe (no console window) and logs all output.
+    # VBS runs the bat silently so no flash of a terminal on login.
+
+    bot_log     = logs_dir / "bot_stdout.log"
+    startup_log = logs_dir / "startup.log"
+
+    bat_path = TOOLKIT_DIR / "start_bot.bat"
+    bat_path.write_text(
+        f"@echo off\r\n"
+        f"cd /d \"{TOOLKIT_DIR}\"\r\n"
+        f"echo [%date% %time%] ============================= >> \"{startup_log}\"\r\n"
+        f"echo [%date% %time%] Mend Case Bot starting >> \"{startup_log}\"\r\n"
+        f"echo [%date% %time%] Python: {pythonw_exe} >> \"{startup_log}\"\r\n"
+        f"echo [%date% %time%] Toolkit: {TOOLKIT_DIR} >> \"{startup_log}\"\r\n"
+        f"\"{pythonw_exe}\" \"{TOOLKIT_DIR / 'case_bot.py'}\" >> \"{bot_log}\" 2>&1\r\n"
+        f"echo [%date% %time%] Bot process exited (code %ERRORLEVEL%) >> \"{startup_log}\"\r\n",
+        encoding="utf-8"
+    )
+
+    vbs_path = TOOLKIT_DIR / "start_bot.vbs"
+    vbs_path.write_text(
+        f'Set WshShell = CreateObject("WScript.Shell")\r\n'
+        f'WshShell.Run "cmd /c ""{bat_path}""", 0, False\r\n',
+        encoding="utf-8"
+    )
+
+    # Place a shortcut to the VBS in the Windows Startup folder
+    shortcut_path = startup_dir / "MendCaseBot.lnk"
+    shortcut_ps = (
+        f'$ws = New-Object -ComObject WScript.Shell; '
+        f'$s = $ws.CreateShortcut("{shortcut_path}"); '
+        f'$s.TargetPath = "wscript.exe"; '
+        f'$s.Arguments = \'"{vbs_path}"\'; '
+        f'$s.WorkingDirectory = "{TOOLKIT_DIR}"; '
+        f'$s.Description = "Mend Case Watcher Bot"; '
+        f'$s.Save()'
+    )
+    result = subprocess.run(
+        ["powershell", "-ExecutionPolicy", "Bypass", "-Command", shortcut_ps],
+        capture_output=True, text=True, timeout=15
+    )
+    if result.returncode == 0 and shortcut_path.exists():
+        ok(f"Bot: startup shortcut created → {shortcut_path}")
+        ok(f"Bot: logs → {bot_log}")
+        ok(f"Bot: startup events → {startup_log}")
+    else:
+        warn(f"Could not create startup shortcut: {result.stderr.strip()[:200]}")
+        info(f"Manual fix: place a shortcut to '{vbs_path}' in your Startup folder:")
+        info(f"  {startup_dir}")
+
+    # ── Watcher: Task Scheduler with explicit working directory ───────────────
+    # Working directory is the critical fix — without it Python can't find config.json.
+    watcher_log = logs_dir / "watcher_stdout.log"
+
+    watcher_bat = TOOLKIT_DIR / "start_watcher.bat"
+    watcher_bat.write_text(
+        f"@echo off\r\n"
+        f"cd /d \"{TOOLKIT_DIR}\"\r\n"
+        f"echo [%date% %time%] Watcher run started >> \"{startup_log}\"\r\n"
+        f"\"{python_exe}\" \"{watcher_py}\" >> \"{watcher_log}\" 2>&1\r\n"
+        f"echo [%date% %time%] Watcher run exited (code %ERRORLEVEL%) >> \"{startup_log}\"\r\n",
+        encoding="utf-8"
+    )
+
+    watcher_ps = (
+        f'$action   = New-ScheduledTaskAction '
+        f'-Execute "cmd.exe" '
+        f'-Argument \'/c "{watcher_bat}"\' '
+        f'-WorkingDirectory "{TOOLKIT_DIR}"; '
+        f'$trigger  = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 5) -Once -At (Get-Date); '
+        f'$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 4) '
+        f'-StartWhenAvailable -MultipleInstances IgnoreNew -Hidden $true; '
+        f'Register-ScheduledTask -TaskName "MendCaseWatcher" '
+        f'-Action $action -Trigger $trigger -Settings $settings -Force | Out-Null; '
+        f'Write-Output "OK"'
+    )
     result = subprocess.run(
         ["powershell", "-ExecutionPolicy", "Bypass", "-Command", watcher_ps],
         capture_output=True, text=True, timeout=30
     )
     if "OK" in result.stdout:
-        ok("Task Scheduler: MendCaseWatcher registered (every 5 min)")
+        ok("Watcher: Task Scheduler registered (every 5 min)")
+        ok(f"Watcher: logs → {watcher_log}")
     else:
-        warn(f"Watcher task registration failed: {result.stderr.strip()[:200]}")
-        info("Run setup.py as Administrator, or register the task manually.")
-
-    bot_ps = f"""
-$action   = New-ScheduledTaskAction -Execute '{python_exe}' -Argument '{bot_py}'
-$trigger  = New-ScheduledTaskTrigger -AtLogOn
-$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 0) `
-              -RestartCount 99 -RestartInterval (New-TimeSpan -Minutes 5) -StartWhenAvailable
-Register-ScheduledTask -TaskName 'MendCaseBot' `
-  -Action $action -Trigger $trigger -Settings $settings -RunLevel Highest -Force | Out-Null
-Write-Output 'OK'
-"""
-    result = subprocess.run(
-        ["powershell", "-ExecutionPolicy", "Bypass", "-Command", bot_ps],
-        capture_output=True, text=True, timeout=30
-    )
-    if "OK" in result.stdout:
-        ok("Task Scheduler: MendCaseBot registered (starts at login, auto-restarts)")
-    else:
-        warn(f"Bot task registration failed: {result.stderr.strip()[:200]}")
-        info("Run setup.py as Administrator to register the bot task.")
+        warn(f"Watcher Task Scheduler failed: {result.stderr.strip()[:200]}")
+        info(f"Manual fix: run this bat on a schedule, or trigger manually:")
+        info(f"  {watcher_bat}")
 
 
 def _setup_macos_launchd():
     python_exe  = sys.executable
     watcher_py  = str(TOOLKIT_DIR / "case_watcher.py")
     bot_py      = str(TOOLKIT_DIR / "case_bot.py")
-    log_path    = str(TOOLKIT_DIR / "toolkit.log")
+    logs_dir    = _ensure_logs_dir()
+    bot_log     = str(logs_dir / "bot_stdout.log")
+    watcher_log = str(logs_dir / "watcher_stdout.log")
     agents_dir  = Path.home() / "Library" / "LaunchAgents"
     agents_dir.mkdir(parents=True, exist_ok=True)
 
@@ -486,10 +548,11 @@ def _setup_macos_launchd():
         <string>{python_exe}</string>
         <string>{watcher_py}</string>
     </array>
+    <key>WorkingDirectory</key><string>{TOOLKIT_DIR}</string>
     <key>StartInterval</key><integer>300</integer>
     <key>RunAtLoad</key><true/>
-    <key>StandardOutPath</key><string>{log_path}</string>
-    <key>StandardErrorPath</key><string>{log_path}</string>
+    <key>StandardOutPath</key><string>{watcher_log}</string>
+    <key>StandardErrorPath</key><string>{watcher_log}</string>
 </dict>
 </plist>
 """, encoding="utf-8")
@@ -505,21 +568,24 @@ def _setup_macos_launchd():
         <string>{python_exe}</string>
         <string>{bot_py}</string>
     </array>
+    <key>WorkingDirectory</key><string>{TOOLKIT_DIR}</string>
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key><true/>
-    <key>StandardOutPath</key><string>{log_path}</string>
-    <key>StandardErrorPath</key><string>{log_path}</string>
+    <key>StandardOutPath</key><string>{bot_log}</string>
+    <key>StandardErrorPath</key><string>{bot_log}</string>
 </dict>
 </plist>
 """, encoding="utf-8")
 
-    for label, plist in [("MendCaseWatcher", watcher_plist), ("MendCaseBot", bot_plist)]:
-        subprocess.run(["launchctl", "unload", str(plist)],
-                       capture_output=True)  # ignore errors if not loaded yet
-        result = subprocess.run(["launchctl", "load", str(plist)],
-                                capture_output=True, text=True)
+    for label, plist, log_file in [
+        ("MendCaseWatcher", watcher_plist, watcher_log),
+        ("MendCaseBot",     bot_plist,     bot_log),
+    ]:
+        subprocess.run(["launchctl", "unload", str(plist)], capture_output=True)
+        result = subprocess.run(["launchctl", "load", str(plist)], capture_output=True, text=True)
         if result.returncode == 0:
             ok(f"launchd: {label} registered ({plist.name})")
+            ok(f"  logs → {log_file}")
         else:
             warn(f"launchctl load failed for {label}: {result.stderr.strip()[:200]}")
 
