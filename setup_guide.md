@@ -123,7 +123,8 @@ This is the biggest step. You need to create **your own personal Slack app** —
 3. Choose **"From a manifest"**
 4. Select the **Mend** workspace
 5. On the manifest screen, open the file `slack_app_manifest.yaml` from the repo folder you cloned. Copy its entire contents and paste it into the text box.
-6. Click **Next**, review the settings (scopes, events — all pre-configured), then **Create**.
+6. Click **Next** — you'll see a review screen. **Change the app name** from `Mend Case Watcher - YOUR NAME HERE` to something like `Mend Case Watcher - William`. This is important — if everyone leaves the default name, there will be multiple identically-named bots in the workspace and nobody will know which is theirs.
+7. Click **Create**.
 
 Your app is created. You should now be on the app's settings page.
 

@@ -1,5 +1,5 @@
 display_information:
-  name: Mend Case Watcher
+  name: Mend Case Watcher - YOUR NAME HERE
   description: Personal Salesforce case management bot for Mend support engineers.
   background_color: "#1d2951"
 
@@ -9,7 +9,7 @@ features:
     messages_tab_enabled: true
     messages_tab_read_only_enabled: false
   bot_user:
-    display_name: Mend Case Watcher
+    display_name: Mend Case Watcher - YOUR NAME HERE
     always_online: true
 
 oauth_config:
@@ -17,6 +17,7 @@ oauth_config:
     bot:
       - chat:write
       - im:write
+      - im:history
       - users:read
 
 settings:
