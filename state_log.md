@@ -1,6 +1,6 @@
 # Mend Support Toolkit v2.0 — Project State Log
 
-_Last updated: 2026-04-17 (rev 2)_
+_Last updated: 2026-04-17 (rev 3)_
 
 ---
 
@@ -114,6 +114,8 @@ CASES_2/
     - Slack setup instructions updated: each user must create their own Slack app
   - **`PLAN_option_a.md`**: deployment strategy documented (Option B dropped — requires SF admin for Connected App)
   - **Git initialised** on `master`; all active development on `dev` branch
+  - **Slack app manifest** (`slack_app_manifest.yaml`): pre-configured app definition colleagues can import at api.slack.com in one paste — eliminates manual scope/event/Socket Mode setup
+  - **`users:read.email` scope removed** from manifest and setup.py; Slack user ID now entered manually (avoids workspace admin approval requirement)
 
 _As of 2026-04-17, the tool is in active daily use. Recent log activity shows cases being processed across My Cases and Other Cases queues._
 
@@ -123,7 +125,7 @@ _As of 2026-04-17, the tool is in active daily use. Recent log activity shows ca
 
 These are ordered by impact. Pick up from wherever makes sense:
 
-1. **Write `README.md`** — public-facing quickstart for colleagues. Should cover prerequisites, clone → `python setup.py`, Slack app creation steps (with links), and troubleshooting. See `PLAN_option_a.md` Phase 2.
+1. **Write `README.md`** — public-facing quickstart for colleagues. Should cover prerequisites, clone → `python setup.py`, Slack app creation (point to `slack_app_manifest.yaml`), and troubleshooting. See `PLAN_option_a.md` Phase 2.
 
 2. **End-to-end test on a colleague's machine** — validate the Phase 0 guard works and that setup.py runs clean on macOS. See `PLAN_option_a.md` Phase 3 checklist.
 

@@ -277,23 +277,19 @@ def setup_slack(config: dict) -> dict:
     section("Step 8 — Slack configuration")
 
     info("Each person runs their own Slack bot — you need YOUR OWN Slack app.")
-    info("This takes about 5 minutes and doesn't require any workspace admin rights.")
+    info("The repo includes a manifest that pre-configures everything in one paste.")
+    info("This takes about 2 minutes and does not require workspace admin rights.")
     info("")
-    info("Create your Slack app now:")
-    info("  1. https://api.slack.com/apps → Create New App → From scratch")
-    info("  2. Name: 'Mend Case Watcher - <your name>'  |  Choose your Mend workspace")
-    info("  3. Socket Mode → Enable Socket Mode → Generate App-Level Token")
-    info("       Scope: connections:write  |  Name it anything (e.g. watcher-token)")
-    info("       Copy the xapp-... token")
-    info("  4. OAuth & Permissions → Bot Token Scopes → Add:")
-    info("       chat:write  im:write  users:read  users:read.email")
+    info("  1. https://api.slack.com/apps → Create New App → From a manifest")
+    info("  2. Select your Mend workspace, then paste the contents of:")
+    info(f"     {TOOLKIT_DIR / 'slack_app_manifest.yaml'}")
+    info("  3. Review and create — all scopes and settings are pre-filled")
+    info("  4. Socket Mode → Generate App-Level Token")
+    info("       Scope: connections:write  |  Copy the xapp-... token")
     info("  5. Install to Workspace → copy the Bot User OAuth Token (xoxb-...)")
-    info("  6. Event Subscriptions → Enable Events → Subscribe to Bot Events:")
-    info("       message.im")
-    info("  7. App Home → check 'Allow users to send Slash commands and messages'")
     print()
 
-    if ask_yn("Open Slack API setup page?", default=False):
+    if ask_yn("Open Slack API page now?", default=False):
         open_url("https://api.slack.com/apps")
 
     bot_token = config.get("slack_bot_token", "")
@@ -306,34 +302,20 @@ def setup_slack(config: dict) -> dict:
         app_token = ask("Paste App-Level Token (xapp-...)")
         config["slack_app_token"] = app_token
 
-    # Resolve the user's own Slack ID from their SF email
-    if bot_token and not config.get("slack_user_id"):
-        sf_user = config.get("sf_user", "")
-        if sf_user:
-            import urllib.request
-            try:
-                req = urllib.request.Request(
-                    f"https://slack.com/api/users.lookupByEmail?email={sf_user}",
-                    headers={"Authorization": f"Bearer {bot_token}"}
-                )
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    data = json.loads(resp.read())
-                if data.get("ok"):
-                    uid = data["user"]["id"]
-                    config["slack_user_id"] = uid
-                    ok(f"Slack user ID resolved: {uid}")
-                else:
-                    warn(f"Could not auto-resolve Slack user ID: {data.get('error')}")
-                    uid = ask("Paste your Slack user ID manually (e.g. U09UNTT3FGT)", default="")
-                    if uid:
-                        config["slack_user_id"] = uid
-            except Exception as e:
-                warn(f"Slack lookup failed: {e}")
+    # Ask for Slack user ID directly — avoids the users:read.email scope
+    # which often requires workspace admin approval
+    if not config.get("slack_user_id"):
+        info("")
+        info("Your Slack user ID is needed so the bot knows who to notify.")
+        info("Find it in Slack: click your avatar → Profile → ⋯ (More) → Copy member ID")
+        uid = ask("Paste your Slack member ID (e.g. U09UNTT3FGT)")
+        if uid:
+            config["slack_user_id"] = uid
 
     if config.get("slack_user_id"):
-        ok(f"Slack configured. DMs will go to {config['slack_user_id']}")
+        ok(f"Slack configured. Bot will respond to {config['slack_user_id']}")
     else:
-        warn("slack_user_id not set — DMs will not work. Set it with `config slack_user_id <ID>`")
+        warn("slack_user_id not set — the bot will not respond to anyone. Set it with `config slack_user_id <ID>`")
 
     return config
 
