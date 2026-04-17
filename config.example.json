@@ -1,0 +1,38 @@
+{
+  "_comment": "Copy this file to config.json and fill in your values. Run setup.py to be guided through setup.",
+
+  "slack_bot_token":  "",
+  "slack_app_token":  "",
+  "slack_user_id":    "",
+
+  "sf_user":          "",
+  "sf_report_id":     "00OSg00000CFJ6gMAH",
+  "sf_domain_field":  "Domain_Category__c",
+  "sf_subcategory_field": "Domain_Sub_Category__c",
+  "sf_picklist_cache": {},
+
+  "cases_parent_dir": "",
+  "my_cases_dir":     "",
+  "staging_dir":      "",
+  "other_cases_dir":  "",
+
+  "token_limit":      50000,
+  "poll_my_cases_minutes": 15,
+  "poll_staging_minutes":  5,
+
+  "digest_time":      "09:00",
+
+  "sla_thresholds": {
+    "Critical": 4,
+    "High":     8,
+    "Medium":   24,
+    "Low":      72
+  },
+
+  "gdrive_remote":    "",
+  "gdrive_folder_id": "",
+
+  "jira_account_id":  "",
+
+  "system_prompt": "I am a Mend Technical Support Engineer. You are my technical assistant. Use Mend internal documentation, knowledge base articles and public docs to enhance your understanding of Mend products including SCA, SAST, Renovate/Remediate, and Container scanning."
+}

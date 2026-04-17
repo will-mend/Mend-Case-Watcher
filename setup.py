@@ -1,0 +1,611 @@
+#!/usr/bin/env python3
+"""
+setup.py — Mend Support Toolkit  First-Run Setup & Onboarding Wizard
+
+Run once (or re-run any time to update config / re-register tasks):
+    python setup.py
+
+Steps:
+  1. Check Python version
+  2. Install pip dependencies
+  3. Check / install sf CLI (Salesforce)
+  4. Check / install rclone
+  5. Check Claude CLI
+  6. Create config.json from example
+  7. Set up Salesforce authentication
+  8. Configure Slack tokens
+  9. Discover SF Domain / Sub-category field names
+ 10. Configure Google Drive (rclone)
+ 11. Set up My Cases + Staging directories
+ 12. Register Windows Task Scheduler jobs
+ 13. Generate CLAUDE.md
+ 14. Final summary
+"""
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+TOOLKIT_DIR   = Path(__file__).parent
+CONFIG_PATH   = TOOLKIT_DIR / "config.json"
+EXAMPLE_PATH  = TOOLKIT_DIR / "config.example.json"
+MIN_PYTHON    = (3, 9)
+
+# ── Colour helpers (Windows-safe) ─────────────────────────────────────────────
+GREEN  = "\033[92m"
+YELLOW = "\033[93m"
+RED    = "\033[91m"
+BOLD   = "\033[1m"
+RESET  = "\033[0m"
+
+def ok(msg):    print(f"  {GREEN}[OK]{RESET}  {msg}")
+def warn(msg):  print(f"  {YELLOW}[!!]{RESET}  {msg}")
+def err(msg):   print(f"  {RED}[ERR]{RESET} {msg}")
+def info(msg):  print(f"       {msg}")
+def section(title):
+    print(f"\n{BOLD}{'─'*60}{RESET}")
+    print(f"{BOLD}  {title}{RESET}")
+    print(f"{BOLD}{'─'*60}{RESET}")
+
+
+def ask(prompt: str, default: str = "") -> str:
+    display = f" [{default}]" if default else ""
+    try:
+        val = input(f"  {prompt}{display}: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        sys.exit(0)
+    return val or default
+
+
+def ask_yn(prompt: str, default: bool = True) -> bool:
+    hint = "[Y/n]" if default else "[y/N]"
+    try:
+        val = input(f"  {prompt} {hint}: ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        sys.exit(0)
+    if not val:
+        return default
+    return val in ("y", "yes")
+
+
+def open_url(url: str):
+    try:
+        import webbrowser
+        webbrowser.open(url)
+    except Exception:
+        info(f"Open manually: {url}")
+
+
+def run(cmd: list, **kwargs) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        cmd, capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
+        shell=(os.name == "nt"), **kwargs
+    )
+
+
+def winget_install(package_id: str, display_name: str) -> bool:
+    """Try to install a package via winget. Returns True on success."""
+    if not shutil.which("winget"):
+        return False
+    print(f"       Trying: winget install {package_id} ...")
+    result = run(["winget", "install", "--id", package_id, "-e", "--accept-source-agreements",
+                  "--accept-package-agreements"])
+    if result.returncode == 0:
+        ok(f"{display_name} installed via winget.")
+        return True
+    return False
+
+
+# ── Step 1: Python version ────────────────────────────────────────────────────
+
+def check_python():
+    section("Step 1 — Python version")
+    if sys.version_info < MIN_PYTHON:
+        err(f"Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]}+ required. You have {sys.version}.")
+        sys.exit(1)
+    ok(f"Python {sys.version.split()[0]}")
+
+
+# ── Step 2: pip dependencies ──────────────────────────────────────────────────
+
+def install_deps():
+    section("Step 2 — Installing pip dependencies")
+    req_file = TOOLKIT_DIR / "requirements.txt"
+    if not req_file.exists():
+        warn("requirements.txt not found — skipping.")
+        return
+    result = run([sys.executable, "-m", "pip", "install", "-r", str(req_file), "--quiet"])
+    if result.returncode == 0:
+        ok("pip dependencies installed.")
+    else:
+        err(f"pip install failed:\n{result.stderr}")
+        sys.exit(1)
+
+
+# ── Step 3: Salesforce CLI ────────────────────────────────────────────────────
+
+def check_sf():
+    section("Step 3 — Salesforce CLI (sf)")
+    if shutil.which("sf"):
+        result = run(["sf", "--version"])
+        ok(f"sf CLI found: {result.stdout.strip()[:60]}")
+        return
+    warn("sf CLI not found.")
+    if ask_yn("Try to install via winget?"):
+        if winget_install("Salesforce.SFDXCLI", "sf CLI"):
+            return
+    if ask_yn("Open download page in browser?"):
+        open_url("https://developer.salesforce.com/tools/salesforcecli")
+    err("sf CLI is required. Install it and re-run setup.py.")
+    sys.exit(1)
+
+
+# ── Step 4: rclone ────────────────────────────────────────────────────────────
+
+def check_rclone():
+    section("Step 4 — rclone (Google Drive)")
+    if shutil.which("rclone"):
+        result = run(["rclone", "version"])
+        ok(f"rclone found: {result.stdout.splitlines()[0][:60]}")
+        return
+    warn("rclone not found.")
+    info("rclone is needed to archive closed cases to Google Drive.")
+    info("You can skip this now and configure it later with `config gdrive`.")
+    if ask_yn("Try to install via winget?"):
+        if winget_install("Rclone.Rclone", "rclone"):
+            return
+    if ask_yn("Open rclone download page?"):
+        open_url("https://rclone.org/downloads/")
+    if not ask_yn("Continue without rclone (you can add it later)?", default=True):
+        sys.exit(0)
+
+
+# ── Step 5: Claude CLI ────────────────────────────────────────────────────────
+
+def check_claude():
+    section("Step 5 — Claude CLI")
+    if shutil.which("claude"):
+        ok("Claude CLI found.")
+        return
+    warn("Claude CLI not found.")
+    info("Claude CLI is required for AI features (summarize, claim, tka).")
+    info("Install it from: https://claude.ai/download  (Claude Code)")
+    if ask_yn("Open download page?"):
+        open_url("https://claude.ai/download")
+    if not ask_yn("Continue without Claude CLI (AI features will be unavailable)?", default=True):
+        sys.exit(0)
+
+
+# ── Step 6: config.json ───────────────────────────────────────────────────────
+
+def setup_config() -> dict:
+    section("Step 6 — config.json")
+
+    if not EXAMPLE_PATH.exists():
+        err("config.example.json not found. Make sure it is in the same folder.")
+        sys.exit(1)
+
+    with open(EXAMPLE_PATH, encoding="utf-8") as f:
+        example = json.load(f)
+
+    if CONFIG_PATH.exists():
+        ok("config.json already exists — loading existing values.")
+        with open(CONFIG_PATH, encoding="utf-8") as f:
+            config = json.load(f)
+        # Merge any new keys from example
+        for k, v in example.items():
+            if not k.startswith("_") and k not in config:
+                config[k] = v
+    else:
+        config = {k: v for k, v in example.items() if not k.startswith("_")}
+        ok("Created config.json from template.")
+
+    return config
+
+
+# ── Step 7: Salesforce auth ───────────────────────────────────────────────────
+
+def setup_sf(config: dict) -> dict:
+    section("Step 7 — Salesforce authentication")
+
+    sf_user = config.get("sf_user", "")
+    if not sf_user:
+        sf_user = ask("Your Salesforce / Mend email (e.g. you@mend.io)")
+        config["sf_user"] = sf_user
+
+    # Test auth
+    cmd = ["sf", "org", "display", "--json"]
+    if sf_user:
+        cmd += ["--target-org", sf_user]
+    result = run(cmd)
+
+    try:
+        data = json.loads(result.stdout)
+        if data.get("status") == 0 and data.get("result", {}).get("accessToken"):
+            ok(f"SF authenticated as {sf_user}")
+            return config
+    except Exception:
+        pass
+
+    warn("SF session not found or expired.")
+    if ask_yn("Open SF login in browser now?"):
+        login_cmd = ["sf", "org", "login", "web", "--set-default"]
+        if sf_user:
+            login_cmd += ["--alias", sf_user]
+        subprocess.run(login_cmd, shell=(os.name == "nt"))
+        ok("SF login complete.")
+    else:
+        info("Run `sf org login web --set-default` in your terminal before using the toolkit.")
+
+    return config
+
+
+# ── Step 8: Slack tokens ──────────────────────────────────────────────────────
+
+def setup_slack(config: dict) -> dict:
+    section("Step 8 — Slack configuration")
+
+    info("You need a Slack app with Socket Mode enabled.")
+    info("If this is already set up for the team, get the tokens from a colleague.")
+    info("")
+    info("One-time Slack app setup (skip if already done):")
+    info("  1. https://api.slack.com/apps → Create New App → From scratch")
+    info("  2. Name: 'Mend Support Bot'  |  Choose your workspace")
+    info("  3. Socket Mode → Enable Socket Mode → Generate App-Level Token (xapp-...)")
+    info("  4. OAuth & Permissions → Bot Token Scopes:")
+    info("       chat:write  im:write  users:read  users:read.email")
+    info("  5. Install to Workspace → copy the Bot User OAuth Token (xoxb-...)")
+    info("  6. Event Subscriptions → Subscribe to Bot Events → message.im")
+    print()
+
+    if ask_yn("Open Slack API setup page?", default=False):
+        open_url("https://api.slack.com/apps")
+
+    bot_token = config.get("slack_bot_token", "")
+    if not bot_token or not bot_token.startswith("xoxb-"):
+        bot_token = ask("Paste Bot User OAuth Token (xoxb-...)")
+        config["slack_bot_token"] = bot_token
+
+    app_token = config.get("slack_app_token", "")
+    if not app_token or not app_token.startswith("xapp-"):
+        app_token = ask("Paste App-Level Token (xapp-...)")
+        config["slack_app_token"] = app_token
+
+    # Resolve the user's own Slack ID from their SF email
+    if bot_token and not config.get("slack_user_id"):
+        sf_user = config.get("sf_user", "")
+        if sf_user:
+            import urllib.request
+            try:
+                req = urllib.request.Request(
+                    f"https://slack.com/api/users.lookupByEmail?email={sf_user}",
+                    headers={"Authorization": f"Bearer {bot_token}"}
+                )
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data = json.loads(resp.read())
+                if data.get("ok"):
+                    uid = data["user"]["id"]
+                    config["slack_user_id"] = uid
+                    ok(f"Slack user ID resolved: {uid}")
+                else:
+                    warn(f"Could not auto-resolve Slack user ID: {data.get('error')}")
+                    uid = ask("Paste your Slack user ID manually (e.g. U09UNTT3FGT)", default="")
+                    if uid:
+                        config["slack_user_id"] = uid
+            except Exception as e:
+                warn(f"Slack lookup failed: {e}")
+
+    if config.get("slack_user_id"):
+        ok(f"Slack configured. DMs will go to {config['slack_user_id']}")
+    else:
+        warn("slack_user_id not set — DMs will not work. Set it with `config slack_user_id <ID>`")
+
+    return config
+
+
+# ── Step 9: SF field discovery ────────────────────────────────────────────────
+
+_DEFAULT_DOMAIN_FIELD  = "Domain_Category__c"
+_DEFAULT_SUBCAT_FIELD  = "Domain_Sub_Category__c"
+
+
+def _get_sf_describe(config: dict):
+    """Return (access_token, instance_url, describe_json) or (None, None, None)."""
+    import urllib.request
+    try:
+        cmd = ["sf", "org", "display", "--json"]
+        if config.get("sf_user"):
+            cmd += ["--target-org", config["sf_user"]]
+        result = run(cmd)
+        data   = json.loads(result.stdout)
+        info_d = data.get("result", {})
+        access_token = info_d.get("accessToken", "")
+        instance_url = info_d.get("instanceUrl", "")
+        if not access_token or not instance_url:
+            return None, None, None
+        req = urllib.request.Request(
+            f"{instance_url}/services/data/v62.0/sobjects/Case/describe",
+            headers={"Authorization": f"Bearer {access_token}"}
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            describe = json.loads(resp.read())
+        return access_token, instance_url, describe
+    except Exception as e:
+        warn(f"SF describe failed: {e}")
+        return None, None, None
+
+
+def setup_sf_fields(config: dict) -> dict:
+    section("Step 9 — SF Domain / Sub-category fields")
+
+    info("The 'claim' command updates Domain and Sub-category on the SF case.")
+    info(f"Default field names: {_DEFAULT_DOMAIN_FIELD}  /  {_DEFAULT_SUBCAT_FIELD}")
+    info("Validating against your SF org...")
+    print()
+
+    domain_field = config.get("sf_domain_field", _DEFAULT_DOMAIN_FIELD)
+    subcat_field = config.get("sf_subcategory_field", _DEFAULT_SUBCAT_FIELD)
+
+    _, _, describe = _get_sf_describe(config)
+
+    if describe:
+        all_field_names = {f["name"] for f in describe.get("fields", [])}
+        picklist_fields = [
+            f["name"] for f in describe.get("fields", [])
+            if f.get("type") == "picklist" and f.get("name", "").endswith("__c")
+        ]
+
+        domain_ok = domain_field in all_field_names
+        subcat_ok = subcat_field in all_field_names
+
+        if domain_ok and subcat_ok:
+            ok(f"Default fields confirmed in SF: {domain_field} / {subcat_field}")
+            config["sf_domain_field"]      = domain_field
+            config["sf_subcategory_field"] = subcat_field
+            info("(Picklist values are cached automatically on first use.)")
+            return config
+
+        # One or both defaults not found — show picklist fields and ask
+        warn(f"Field(s) not found in SF org:")
+        if not domain_ok:
+            warn(f"  '{domain_field}' — not found")
+        if not subcat_ok:
+            warn(f"  '{subcat_field}' — not found")
+        print()
+        if picklist_fields:
+            info("Custom picklist fields available on Case:")
+            for i, fname in enumerate(picklist_fields[:30], 1):
+                info(f"  {i:2}. {fname}")
+            print()
+    else:
+        warn("Could not reach SF — skipping validation. Using defaults (can be changed later).")
+
+    new_domain = ask("Domain field API name", default=domain_field)
+    new_subcat = ask("Sub-category field API name", default=subcat_field)
+    config["sf_domain_field"]      = new_domain
+    config["sf_subcategory_field"] = new_subcat
+    ok(f"Fields set: {new_domain}  /  {new_subcat}")
+    info("(Picklist values are cached automatically on first use.)")
+
+    return config
+
+
+# ── Step 10: Google Drive / rclone ────────────────────────────────────────────
+
+def setup_gdrive(config: dict) -> dict:
+    section("Step 10 — Google Drive (rclone)")
+
+    if not shutil.which("rclone"):
+        info("rclone not installed — skipping Google Drive setup.")
+        info("Install rclone later and run `config gdrive <remote> <folder-id>`.")
+        return config
+
+    info("rclone needs a one-time Google Drive authentication.")
+    info("This opens a browser window — you only do this once.")
+    print()
+
+    existing_remote = config.get("gdrive_remote", "")
+    if existing_remote:
+        ok(f"rclone remote already configured: {existing_remote}")
+        if not ask_yn("Re-configure?", default=False):
+            return config
+
+    if ask_yn("Run `rclone config` now to set up Google Drive?"):
+        subprocess.run(["rclone", "config"], shell=(os.name == "nt"))
+        print()
+        remote_name = ask("Name of the rclone remote you just created (e.g. gdrive)")
+        folder_id   = ask("Google Drive folder ID for archives (from the folder URL)", default="")
+        config["gdrive_remote"]    = remote_name
+        config["gdrive_folder_id"] = folder_id
+        ok(f"Google Drive configured: {remote_name}:{folder_id}")
+    else:
+        info("Skipped. Configure later with `config gdrive <remote> <folder-id>`.")
+
+    return config
+
+
+# ── Step 11: Directories ──────────────────────────────────────────────────────
+
+def setup_directories(config: dict) -> dict:
+    section("Step 11 — Case directories")
+
+    info("All case folders live under a single parent directory.")
+    info("Three sub-folders will be created automatically:")
+    info("  My Cases/    — cases assigned to you")
+    info("  Staging/     — unassigned queue cases")
+    info("  Other Cases/ — cases you look up that belong to someone else")
+    print()
+
+    # Determine default parent: use existing my_cases_dir parent if already set,
+    # otherwise default to TOOLKIT_DIR.
+    existing_parent = ""
+    if config.get("cases_parent_dir"):
+        existing_parent = config["cases_parent_dir"]
+    elif config.get("my_cases_dir"):
+        existing_parent = str(Path(config["my_cases_dir"]).parent)
+
+    default_parent = existing_parent or str(TOOLKIT_DIR)
+    parent = ask("Parent directory for all case folders", default=default_parent)
+    parent_path = Path(parent)
+
+    sub_dirs = {
+        "my_cases_dir":    parent_path / "My Cases",
+        "staging_dir":     parent_path / "Staging",
+        "other_cases_dir": parent_path / "Other Cases",
+    }
+
+    for key, path in sub_dirs.items():
+        path.mkdir(parents=True, exist_ok=True)
+        config[key] = str(path)
+        label = key.replace("_dir", "").replace("_", " ").title()
+        ok(f"{label:<14}: {path}")
+
+    config["cases_parent_dir"] = str(parent_path)
+    return config
+
+
+# ── Step 12: Task Scheduler ───────────────────────────────────────────────────
+
+def setup_task_scheduler():
+    section("Step 12 — Windows Task Scheduler")
+
+    if os.name != "nt":
+        info("Non-Windows system — skipping Task Scheduler.")
+        info("To run the watcher, add a cron job: */5 * * * * python case_watcher.py")
+        info("To run the bot: python case_bot.py (start at login via your system's autostart)")
+        return
+
+    python_exe  = sys.executable
+    watcher_py  = str(TOOLKIT_DIR / "case_watcher.py")
+    bot_py      = str(TOOLKIT_DIR / "case_bot.py")
+
+    # Watcher — every 5 minutes
+    watcher_ps = f"""
+$action   = New-ScheduledTaskAction -Execute '{python_exe}' -Argument '{watcher_py}'
+$trigger  = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 5) -Once -At (Get-Date)
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 4) `
+              -StartWhenAvailable -MultipleInstances IgnoreNew -Hidden $true
+Register-ScheduledTask -TaskName 'MendCaseWatcher' `
+  -Action $action -Trigger $trigger -Settings $settings -RunLevel Highest -Force | Out-Null
+Write-Output 'OK'
+"""
+    result = subprocess.run(
+        ["powershell", "-ExecutionPolicy", "Bypass", "-Command", watcher_ps],
+        capture_output=True, text=True, timeout=30
+    )
+    if "OK" in result.stdout:
+        ok("Task Scheduler: MendCaseWatcher registered (every 5 min)")
+    else:
+        warn(f"Watcher task registration failed: {result.stderr.strip()[:200]}")
+        info("Run setup.py as Administrator, or register the task manually.")
+
+    # Bot — at login, restart on crash
+    bot_ps = f"""
+$action   = New-ScheduledTaskAction -Execute '{python_exe}' -Argument '{bot_py}'
+$trigger  = New-ScheduledTaskTrigger -AtLogOn
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 0) `
+              -RestartCount 99 -RestartInterval (New-TimeSpan -Minutes 5) -StartWhenAvailable
+Register-ScheduledTask -TaskName 'MendCaseBot' `
+  -Action $action -Trigger $trigger -Settings $settings -RunLevel Highest -Force | Out-Null
+Write-Output 'OK'
+"""
+    result = subprocess.run(
+        ["powershell", "-ExecutionPolicy", "Bypass", "-Command", bot_ps],
+        capture_output=True, text=True, timeout=30
+    )
+    if "OK" in result.stdout:
+        ok("Task Scheduler: MendCaseBot registered (starts at login, auto-restarts)")
+    else:
+        warn(f"Bot task registration failed: {result.stderr.strip()[:200]}")
+        info("Run setup.py as Administrator to register the bot task.")
+
+
+# ── Step 13: CLAUDE.md ────────────────────────────────────────────────────────
+
+def setup_claude_md():
+    section("Step 13 — CLAUDE.md (AI system prompt)")
+
+    sys.path.insert(0, str(TOOLKIT_DIR))
+    try:
+        from utils import regenerate_claude_md
+        regenerate_claude_md()
+        ok(f"CLAUDE.md written to {TOOLKIT_DIR / 'CLAUDE.md'}")
+        info("Edit system_prompt in config.json (or use `config system-prompt ...`)")
+        info("to customise the AI assistant's context and behaviour.")
+    except Exception as e:
+        warn(f"Could not generate CLAUDE.md: {e}")
+
+
+# ── Step 14: Final summary ────────────────────────────────────────────────────
+
+def final_summary(config: dict):
+    section("Setup complete!")
+
+    print(f"""
+  {GREEN}{BOLD}✓ Mend Support Toolkit is ready.{RESET}
+
+  {BOLD}To start the bot manually:{RESET}
+    python case_bot.py
+
+  {BOLD}To run the watcher manually:{RESET}
+    python case_watcher.py
+
+  {BOLD}Then DM your Slack bot:{RESET}
+    help          — see all commands
+    case 00165609 — try fetching a case
+    staging       — check the staging queue
+    digest        — see your open cases
+
+  {BOLD}Config:{RESET}         {CONFIG_PATH}
+  {BOLD}Logs:{RESET}           {TOOLKIT_DIR / 'toolkit.log'}
+  {BOLD}My Cases:{RESET}       {config.get('my_cases_dir', '(not set)')}
+  {BOLD}Staging:{RESET}        {config.get('staging_dir', '(not set)')}
+  {BOLD}Other Cases:{RESET}    {config.get('other_cases_dir', '(not set)')}
+  {BOLD}CLAUDE.md:{RESET}      {TOOLKIT_DIR / 'CLAUDE.md'}
+""")
+
+    if not config.get("jira_account_id"):
+        info("TIP: For TKA ticket creation, set your Jira account ID:")
+        info("     config jira-account-id <your-jira-account-id>")
+        info("     (Find it in your Jira profile URL)")
+        print()
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+def main():
+    print(f"\n{BOLD}{'═'*60}{RESET}")
+    print(f"{BOLD}   Mend Support Toolkit — Setup Wizard{RESET}")
+    print(f"{BOLD}{'═'*60}{RESET}")
+
+    check_python()
+    install_deps()
+    check_sf()
+    check_rclone()
+    check_claude()
+
+    config = setup_config()
+    config = setup_sf(config)
+    config = setup_slack(config)
+    config = setup_sf_fields(config)
+    config = setup_gdrive(config)
+    config = setup_directories(config)
+
+    # Save config before registering tasks (tasks need the saved config)
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2)
+    ok("config.json saved.")
+
+    setup_task_scheduler()
+    setup_claude_md()
+    final_summary(config)
+
+
+if __name__ == "__main__":
+    main()
